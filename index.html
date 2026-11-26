@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rutas JR y Shinkansen · Japón</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #1d2433; background: #f4f6fa;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 10px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e3e7ef;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 6px;
+    border: 1px solid #c9d1de; background: #fff; cursor: pointer;
+  }
+  button:hover { background: #eef2f8; }
+  button.primary { background: #7a1f1f; color: #fff; border-color: #7a1f1f; }
+  button.primary:hover { background: #5e1717; }
+
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px 1fr; }
+  aside { overflow: auto; padding: 14px; background: #fff; border-right: 1px solid #e3e7ef; }
+  aside h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: #56607a; margin: 16px 0 8px; }
+  aside h2:first-child { margin-top: 0; }
+
+  .total {
+    background: #1d2433; color: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 4px;
+  }
+  .total .big { font-size: 26px; font-weight: 700; }
+  .total .sub { font-size: 12px; opacity: .8; }
+
+  .st { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        padding: 7px 0; border-bottom: 1px solid #f0f2f6; }
+  .st small, .stop small { display: block; color: #6b7487; font-size: 11px; }
+  .cnt { font-size: 12px; font-weight: 700; color: #7a1f1f; margin-right: 4px; }
+
+  ol.stops, ol.legs { list-style: none; padding: 0; margin: 0; }
+  ol.stops li { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+                padding: 6px 8px; background: #f7f9fc; border-radius: 6px; margin-bottom: 4px; font-size: 13px; }
+  ol.stops .n { display: inline-block; width: 22px; color: #7a1f1f; font-weight: 700; }
+  ol.stops button { padding: 2px 8px; font-size: 12px; }
+
+  ol.legs li { padding: 8px 0; border-bottom: 1px dashed #e3e7ef; font-size: 13px; }
+  .leg-d .km { font-weight: 700; color: #1d4fa0; }
+  .leg-d .acc { color: #6b7487; font-size: 12px; margin-left: 6px; }
+  .leg-v { font-size: 12px; color: #56607a; margin-top: 2px; }
+  .empty { font-size: 13px; color: #6b7487; }
+  .note { font-size: 11px; color: #6b7487; margin-top: 14px; line-height: 1.4; }
+
+  .map-wrap { position: relative; min-height: 0; }
+  #map { position: absolute; inset: 0; }
+  .legend {
+    position: absolute; bottom: 14px; left: 14px; z-index: 1000; background: #fff;
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  .legend div { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+  .legend i { display: inline-block; width: 26px; height: 0; border-top: 4px solid; }
+
+  .stop-badge {
+    background: #7a1f1f; color: #fff; font-size: 11px; font-weight: 700;
+    border: 2px solid #fff; border-radius: 10px; text-align: center; line-height: 16px;
+    padding: 0 4px; box-shadow: 0 1px 4px rgba(0,0,0,.4); white-space: nowrap;
+  }
+
+  @media (max-width: 800px) {
+    body { height: auto; }
+    .main { grid-template-columns: 1fr; grid-template-rows: auto 65vh; }
+    aside { border-right: none; border-bottom: 1px solid #e3e7ef; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚄 Rutas JR y Shinkansen · Japón</h1>
+  <div class="toolbar">
+    <button id="btnPreset" class="primary">Cargar itinerario</button>
+    <button id="btnUndo">Quitar última parada</button>
+    <button id="btnClear">Limpiar</button>
+  </div>
+</header>
+
+<div class="main">
+  <aside>
+    <div class="total">
+      <div class="big" id="totalKm">0 km</div>
+      <div class="sub" id="totalSub">Selecciona estaciones en la lista o en el mapa</div>
+    </div>
+
+    <h2>Ruta (orden de paradas)</h2>
+    <ol class="stops" id="stops"></ol>
+
+    <h2>Tramos y distancia</h2>
+    <ol class="legs" id="legs"></ol>
+    <div class="empty" id="legsEmpty">Agrega al menos dos paradas para ver distancias.</div>
+
+    <h2>Estaciones</h2>
+    <div id="stationList"></div>
+
+    <p class="note">
+      Distancias aproximadas por vía ferroviaria, redondeadas. Las líneas en el mapa unen estaciones
+      en línea recta, no siguen el trazado exacto de las vías. Verifica horarios y tramos antes de viajar.
+    </p>
+  </aside>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="legend">
+      <div><i style="border-color:#1f6feb"></i>Shinkansen</div>
+      <div><i style="border-color:#2da44e"></i>JR (línea convencional)</div>
+      <div><i style="border-color:#d4a017;border-top-style:dashed"></i>Autobús</div>
+      <div><i style="border-color:#8b5cf6;border-top-style:dotted"></i>Otro operador (no JR)</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   DATOS
+   Estaciones principales. Coordenadas aproximadas.
+   ====================================================================== */
+const STATIONS = [
+  { id: 'HND', name: 'Aeropuerto Haneda', jp: '羽田空港',   lat: 35.5494, lng: 139.7798, op: 'Keikyu / Monorail' },
+  { id: 'TOK', name: 'Tokio (Estación Tokio)', jp: '東京', lat: 35.6812, lng: 139.7671, op: 'JR / Shinkansen' },
+  { id: 'KAM', name: 'Kamakura',               jp: '鎌倉', lat: 35.3193, lng: 139.5520, op: 'JR Yokosuka' },
+  { id: 'ODA', name: 'Odawara',                jp: '小田原', lat: 35.2556, lng: 139.1544, op: 'JR / Shinkansen' },
+  { id: 'HAK', name: 'Hakone-Yumoto',          jp: '箱根湯本', lat: 35.2326, lng: 139.1069, op: 'Odakyu / Hakone' },
+  { id: 'KYO', name: 'Kioto',                  jp: '京都', lat: 34.9858, lng: 135.7588, op: 'JR / Shinkansen' },
+  { id: 'TSU', name: 'Tsuruga',                jp: '敦賀', lat: 35.6459, lng: 136.0624, op: 'JR / Shinkansen' },
+  { id: 'KAN', name: 'Kanazawa',               jp: '金沢', lat: 36.5781, lng: 136.6486, op: 'JR / Shinkansen' },
+  { id: 'SHI', name: 'Shirakawa-go (parada de bus)', jp: '白川郷', lat: 36.2578, lng: 136.9054, op: 'Autobús' },
+  { id: 'OSA', name: 'Osaka',                  jp: '大阪', lat: 34.7024, lng: 135.4959, op: 'JR / Shinkansen' },
+  { id: 'NAR', name: 'Nara',                   jp: '奈良', lat: 34.6851, lng: 135.8000, op: 'JR Yamatoji' },
+  { id: 'HIR', name: 'Hiroshima',              jp: '広島', lat: 34.3978, lng: 132.4754, op: 'JR / Shinkansen' },
+  { id: 'MIY', name: 'Miyajimaguchi (ferry a Miyajima)', jp: '宮島口', lat: 34.3297, lng: 132.3196, op: 'JR San\'yō' },
+];
+
+/* Tramos directos: [origen, destino, km aprox., modo, línea/servicio]
+   Modos: shinkansen | jr | bus | otro */
+const EDGES = [
+  ['HND', 'TOK', 20,  'otro',       'Keikyu / Tokyo Monorail'],
+  ['TOK', 'ODA', 84,  'shinkansen', 'Tōkaidō Shinkansen'],
+  ['ODA', 'HAK', 9,   'otro',       'Odakyu Hakone'],
+  ['ODA', 'KYO', 430, 'shinkansen', 'Tōkaidō Shinkansen'],
+  ['KYO', 'OSA', 43,  'jr',         'JR Kyoto (Tōkaidō Main)'],
+  ['KYO', 'TSU', 140, 'jr',         'JR Thunderbird (limitado)'],
+  ['TSU', 'KAN', 113, 'shinkansen', 'Hokuriku Shinkansen'],
+  ['KAN', 'SHI', 90,  'bus',        'Autobús a Shirakawa-go'],
+  ['OSA', 'NAR', 42,  'jr',         'JR Yamatoji'],
+  ['OSA', 'HIR', 343, 'shinkansen', 'San\'yō Shinkansen'],
+  ['HIR', 'MIY', 24,  'jr',         'JR San\'yō'],
+  ['HIR', 'TOK', 894, 'shinkansen', 'San\'yō / Tōkaidō Shinkansen'],
+  ['TOK', 'KAM', 54,  'jr',         'JR Yokosuka'],
+];
+
+/* Itinerario de referencia (imagen del itinerario general) */
+const PRESET = ['HND','TOK','HAK','KYO','KAN','SHI','KAN','OSA','NAR','OSA','HIR','MIY','HIR','TOK','KAM','TOK','HND'];
+
+const MODE = {
+  shinkansen: { color: '#1f6feb', dash: null,  w: 5, label: 'Shinkansen' },
+  jr:         { color: '#2da44e', dash: null,  w: 4, label: 'JR' },
+  bus:        { color: '#d4a017', dash: '8 6', w: 4, label: 'Autobús' },
+  otro:       { color: '#8b5cf6', dash: '2 6', w: 4, label: 'Otro operador' },
+};
+
+/* ======================================================================
+   GRAFO Y RUTA MÁS CORTA (Dijkstra)
+   ====================================================================== */
+const byId = Object.fromEntries(STATIONS.map(s => [s.id, s]));
+const adj = {};
+for (const [a, b, km, mode, line] of EDGES) {
+  (adj[a] ||= []).push({ to: b, km, mode, line });
+  (adj[b] ||= []).push({ to: a, km, mode, line });
+}
+
+function hav(A, B) {
+  const R = 6371, rad = x => x * Math.PI / 180;
+  const dLat = rad(B.lat - A.lat), dLng = rad(B.lng - A.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(A.lat)) * Math.cos(rad(B.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function shortestPath(from, to) {
+  if (from === to) return { km: 0, edges: [] };
+  const dist = {}, prev = {}, done = new Set();
+  STATIONS.forEach(s => dist[s.id] = Infinity);
+  dist[from] = 0;
+  while (true) {
+    let u = null;
+    for (const id in dist) {
+      if (!done.has(id) && dist[id] < Infinity && (u === null || dist[id] < dist[u])) u = id;
+    }
+    if (u === null || u === to) break;
+    done.add(u);
+    for (const e of adj[u] || []) {
+      const nd = dist[u] + e.km;
+      if (nd < dist[e.to]) { dist[e.to] = nd; prev[e.to] = { from: u, edge: e }; }
+    }
+  }
+  if (dist[to] === Infinity) {
+    // Sin conexión en el grafo: estimación en línea recta
+    const km = hav(byId[from], byId[to]) * 1.3;
+    return { km, edges: [{ a: from, b: to, km, mode: 'otro', line: 'Estimado (línea recta × 1.3)' }] };
+  }
+  const edges = [];
+  let cur = to;
+  while (cur !== from) {
+    const p = prev[cur];
+    edges.unshift({ a: p.from, b: cur, km: p.edge.km, mode: p.edge.mode, line: p.edge.line });
+    cur = p.from;
+  }
+  return { km: dist[to], edges };
+}
+
+/* ======================================================================
+   ESTADO (se guarda en el navegador)
+   ====================================================================== */
+const STORAGE_KEY = 'japon-rutas-v1';
+let stops = [];
+try { stops = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { stops = []; }
+stops = stops.filter(id => byId[id]);
+
+function persist() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stops)); } catch (e) {}
+}
+
+/* ======================================================================
+   MAPA
+   ====================================================================== */
+const map = L.map('map');
+map.fitBounds([[30.5, 128.5], [41.8, 146]]);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const stationLayer = L.layerGroup().addTo(map);
+const routeLayer   = L.layerGroup().addTo(map);
+const badgeLayer   = L.layerGroup().addTo(map);
+
+const markers = {};
+for (const s of STATIONS) {
+  const m = L.circleMarker([s.lat, s.lng], {
+    radius: 7, color: '#7a1f1f', weight: 2, fillColor: '#fff', fillOpacity: 1
+  }).addTo(stationLayer);
+  m.bindTooltip(`${s.name} · ${s.jp}`, { direction: 'top' });
+  m.on('click', () => addStop(s.id));
+  markers[s.id] = m;
+}
+
+/* ======================================================================
+   ACCIONES
+   ====================================================================== */
+function addStop(id) { stops.push(id); refresh(); }
+function removeStop(i) { stops.splice(i, 1); refresh(); }
+
+document.getElementById('btnPreset').onclick = () => {
+  stops = [...PRESET];
+  refresh();
+  if (stops.length >= 2) {
+    map.fitBounds(L.latLngBounds(stops.map(id => [byId[id].lat, byId[id].lng])).pad(0.15));
+  }
+};
+document.getElementById('btnUndo').onclick  = () => { stops.pop(); refresh(); };
+document.getElementById('btnClear').onclick = () => { stops = []; refresh(); };
+
+/* ======================================================================
+   RENDER
+   ====================================================================== */
+function refresh() {
+  persist();
+  renderStationList();
+  renderStops();
+  render();
+}
+
+function renderStationList() {
+  const el = document.getElementById('stationList');
+  el.innerHTML = '';
+  for (const s of STATIONS) {
+    const n = stops.filter(x => x === s.id).length;
+    const row = document.createElement('div');
+    row.className = 'st';
+    row.innerHTML = `
+      <div><b>${s.name}</b><small>${s.jp} · ${s.op}</small></div>
+      <div>${n ? `<span class="cnt">×${n}</span>` : ''}<button>+ Agregar</button></div>`;
+    row.querySelector('button').onclick = () => addStop(s.id);
+    el.appendChild(row);
+  }
+}
+
+function renderStops() {
+  const ol = document.getElementById('stops');
+  ol.innerHTML = '';
+  stops.forEach((id, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span><span class="n">${i + 1}</span>${byId[id].name}</span><button title="Quitar">✕</button>`;
+    li.querySelector('button').onclick = () => removeStop(i);
+    ol.appendChild(li);
+  });
+  if (!stops.length) {
+    ol.innerHTML = '<li class="empty">Sin paradas. Haz clic en una estación del mapa.</li>';
+  }
+}
+
+function render() {
+  routeLayer.clearLayers();
+  badgeLayer.clearLayers();
+
+  // Resalta estaciones usadas
+  for (const id in markers) {
+    markers[id].setStyle({ fillColor: stops.includes(id) ? '#7a1f1f' : '#fff' });
+  }
+
+  // Números de orden sobre el mapa
+  const idx = {};
+  stops.forEach((id, i) => (idx[id] ||= []).push(i + 1));
+  for (const id in idx) {
+    const s = byId[id];
+    L.marker([s.lat, s.lng], {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="stop-badge">${idx[id].join('·')}</div>`,
+        iconSize: [40, 20],
+        iconAnchor: [20, 30]
+      })
+    }).addTo(badgeLayer);
+  }
+
+  // Tramos
+  const legsEl = document.getElementById('legs');
+  legsEl.innerHTML = '';
+  let total = 0;
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    const r = shortestPath(a, b);
+    total += r.km;
+
+    // Dibuja cada tramo directo del recorrido
+    for (const e of r.edges) {
+      const ca = byId[e.a], cb = byId[e.b], st = MODE[e.mode] || MODE.otro;
+      L.polyline([[ca.lat, ca.lng], [cb.lat, cb.lng]], {
+        color: st.color, weight: st.w, dashArray: st.dash, opacity: 0.9
+      }).bindTooltip(`${e.line}: ${Math.round(e.km)} km`, { sticky: true }).addTo(routeLayer);
+    }
+
+    const nodes = [a, ...r.edges.map(e => e.b)];
+    const via = nodes.slice(1, -1).map(id => byId[id].name);
+    const lines = [...new Set(r.edges.map(e => e.line))].join(' + ');
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div><b>${byId[a].name} → ${byId[b].name}</b></div>
+      <div class="leg-d">
+        <span class="km">≈ ${Math.round(r.km)} km</span>
+        <span class="acc">acumulado ≈ ${Math.round(total)} km</span>
+      </div>
+      <div class="leg-v">${lines}${via.length ? ' · vía ' + via.join(', ') : ''}</div>`;
+    legsEl.appendChild(li);
+  }
+
+  document.getElementById('legsEmpty').style.display = stops.length >= 2 ? 'none' : 'block';
+
+  document.getElementById('totalKm').textContent =
+    `≈ ${Math.round(total).toLocaleString('es-MX')} km`;
+  document.getElementById('totalSub').textContent =
+    stops.length >= 2
+      ? `${stops.length} paradas · ${stops.length - 1} tramos`
+      : 'Selecciona estaciones en la lista o en el mapa';
+}
+
+refresh();
+</script>
+</body>
+</html>
