@@ -40,7 +40,7 @@
 
   .st { display: flex; align-items: center; justify-content: space-between; gap: 8px;
         padding: 7px 0; border-bottom: 1px solid #f0f2f6; }
-  .st small, .stop small { display: block; color: #6b7487; font-size: 11px; }
+  .st small { display: block; color: #6b7487; font-size: 11px; }
   .cnt { font-size: 12px; font-weight: 700; color: #7a1f1f; margin-right: 4px; }
 
   ol.stops, ol.legs { list-style: none; padding: 0; margin: 0; }
@@ -107,8 +107,9 @@
     <div id="stationList"></div>
 
     <p class="note">
-      Distancias aproximadas por vía ferroviaria, redondeadas. Las líneas en el mapa unen estaciones
-      en línea recta, no siguen el trazado exacto de las vías. Verifica horarios y tramos antes de viajar.
+      Distancias y trazados aproximados, estimados a partir de las líneas ferroviarias. Los puntos
+      intermedios son referenciales y no son el trazado GPS oficial. Verifica horarios y tramos
+      antes de viajar.
     </p>
   </aside>
 
@@ -126,7 +127,7 @@
 <script>
 /* ======================================================================
    DATOS
-   Estaciones principales. Coordenadas aproximadas.
+   Estaciones principales (coordenadas aproximadas).
    ====================================================================== */
 const STATIONS = [
   { id: 'HND', name: 'Aeropuerto Haneda', jp: '羽田空港',   lat: 35.5494, lng: 139.7798, op: 'Keikyu / Monorail' },
@@ -134,6 +135,7 @@ const STATIONS = [
   { id: 'KAM', name: 'Kamakura',               jp: '鎌倉', lat: 35.3193, lng: 139.5520, op: 'JR Yokosuka' },
   { id: 'ODA', name: 'Odawara',                jp: '小田原', lat: 35.2556, lng: 139.1544, op: 'JR / Shinkansen' },
   { id: 'HAK', name: 'Hakone-Yumoto',          jp: '箱根湯本', lat: 35.2326, lng: 139.1069, op: 'Odakyu / Hakone' },
+  { id: 'NAG', name: 'Nagoya',                 jp: '名古屋', lat: 35.1709, lng: 136.8815, op: 'JR / Shinkansen' },
   { id: 'KYO', name: 'Kioto',                  jp: '京都', lat: 34.9858, lng: 135.7588, op: 'JR / Shinkansen' },
   { id: 'TSU', name: 'Tsuruga',                jp: '敦賀', lat: 35.6459, lng: 136.0624, op: 'JR / Shinkansen' },
   { id: 'KAN', name: 'Kanazawa',               jp: '金沢', lat: 36.5781, lng: 136.6486, op: 'JR / Shinkansen' },
@@ -141,25 +143,58 @@ const STATIONS = [
   { id: 'OSA', name: 'Osaka',                  jp: '大阪', lat: 34.7024, lng: 135.4959, op: 'JR / Shinkansen' },
   { id: 'NAR', name: 'Nara',                   jp: '奈良', lat: 34.6851, lng: 135.8000, op: 'JR Yamatoji' },
   { id: 'HIR', name: 'Hiroshima',              jp: '広島', lat: 34.3978, lng: 132.4754, op: 'JR / Shinkansen' },
-  { id: 'MIY', name: 'Miyajimaguchi (ferry a Miyajima)', jp: '宮島口', lat: 34.3297, lng: 132.3196, op: 'JR San\'yō' },
+  { id: 'MIY', name: 'Miyajimaguchi (ferry a Miyajima)', jp: '宮島口', lat: 34.3297, lng: 132.3196, op: "JR San'yō" },
 ];
 
-/* Tramos directos: [origen, destino, km aprox., modo, línea/servicio]
-   Modos: shinkansen | jr | bus | otro */
+/* Tramos directos:
+   [origen, destino, km aprox., modo, servicio, puntos intermedios del trazado]
+   Modos: shinkansen | jr | bus | otro
+   Los puntos intermedios van en orden de origen a destino. */
 const EDGES = [
-  ['HND', 'TOK', 20,  'otro',       'Keikyu / Tokyo Monorail'],
-  ['TOK', 'ODA', 84,  'shinkansen', 'Tōkaidō Shinkansen'],
-  ['ODA', 'HAK', 9,   'otro',       'Odakyu Hakone'],
-  ['ODA', 'KYO', 430, 'shinkansen', 'Tōkaidō Shinkansen'],
-  ['KYO', 'OSA', 43,  'jr',         'JR Kyoto (Tōkaidō Main)'],
-  ['KYO', 'TSU', 140, 'jr',         'JR Thunderbird (limitado)'],
-  ['TSU', 'KAN', 113, 'shinkansen', 'Hokuriku Shinkansen'],
-  ['KAN', 'SHI', 90,  'bus',        'Autobús a Shirakawa-go'],
-  ['OSA', 'NAR', 42,  'jr',         'JR Yamatoji'],
-  ['OSA', 'HIR', 343, 'shinkansen', 'San\'yō Shinkansen'],
-  ['HIR', 'MIY', 24,  'jr',         'JR San\'yō'],
-  ['HIR', 'TOK', 894, 'shinkansen', 'San\'yō / Tōkaidō Shinkansen'],
-  ['TOK', 'KAM', 54,  'jr',         'JR Yokosuka'],
+  ['HND', 'TOK', 20, 'otro', 'Keikyu / Tokyo Monorail',
+    [[35.56, 139.72], [35.63, 139.74]]],
+
+  ['TOK', 'ODA', 84, 'shinkansen', 'Tōkaidō Shinkansen',
+    [[35.63, 139.74], [35.51, 139.62]]],
+
+  ['ODA', 'HAK', 9, 'otro', 'Odakyu Hakone',
+    [[35.25, 139.13]]],
+
+  ['ODA', 'NAG', 282, 'shinkansen', 'Tōkaidō Shinkansen',
+    [[35.10, 139.07], [35.12, 138.91], [35.15, 138.65], [34.97, 138.39],
+     [34.70, 137.73], [34.77, 137.38]]],
+
+  ['NAG', 'KYO', 147, 'shinkansen', 'Tōkaidō Shinkansen',
+    [[35.31, 136.67], [35.27, 136.29]]],
+
+  ['KYO', 'OSA', 43, 'jr', 'JR Kyoto',
+    [[34.92, 135.68], [34.85, 135.62], [34.76, 135.55]]],
+
+  ['KYO', 'TSU', 140, 'jr', 'JR Thunderbird (Línea Kōsei)',
+    [[35.00, 135.87], [35.27, 136.05], [35.50, 136.10]]],
+
+  ['TSU', 'KAN', 113, 'shinkansen', 'Hokuriku Shinkansen',
+    [[36.06, 136.22], [36.28, 136.34], [36.40, 136.45]]],
+
+  ['KAN', 'SHI', 90, 'bus', 'Autobús a Shirakawa-go',
+    [[36.50, 136.72], [36.38, 136.82], [36.30, 136.88]]],
+
+  ['OSA', 'NAR', 42, 'jr', 'JR Yamatoji',
+    [[34.66, 135.54], [34.63, 135.60], [34.63, 135.67], [34.66, 135.75]]],
+
+  ['OSA', 'HIR', 343, 'shinkansen', "San'yō Shinkansen",
+    [[34.69, 135.20], [34.82, 134.69], [34.67, 133.92], [34.49, 133.36], [34.42, 133.20]]],
+
+  ['HIR', 'MIY', 24, 'jr', "JR San'yō",
+    [[34.38, 132.42], [34.36, 132.37]]],
+
+  ['HIR', 'TOK', 894, 'shinkansen', "San'yō / Tōkaidō Shinkansen",
+    [[34.67, 133.92], [34.69, 135.20], [34.73, 135.50], [34.99, 135.76],
+     [35.17, 136.88], [34.97, 138.39], [35.12, 138.91], [35.26, 139.15],
+     [35.51, 139.62], [35.63, 139.74]]],
+
+  ['TOK', 'KAM', 54, 'jr', 'JR Yokosuka',
+    [[35.63, 139.74], [35.47, 139.62], [35.40, 139.53], [35.35, 139.53]]],
 ];
 
 /* Itinerario de referencia (imagen del itinerario general) */
@@ -177,9 +212,9 @@ const MODE = {
    ====================================================================== */
 const byId = Object.fromEntries(STATIONS.map(s => [s.id, s]));
 const adj = {};
-for (const [a, b, km, mode, line] of EDGES) {
-  (adj[a] ||= []).push({ to: b, km, mode, line });
-  (adj[b] ||= []).push({ to: a, km, mode, line });
+for (const [a, b, km, mode, line, wp] of EDGES) {
+  (adj[a] ||= []).push({ to: b, km, mode, line, wp });
+  (adj[b] ||= []).push({ to: a, km, mode, line, wp: [...wp].reverse() });
 }
 
 function hav(A, B) {
@@ -209,13 +244,13 @@ function shortestPath(from, to) {
   if (dist[to] === Infinity) {
     // Sin conexión en el grafo: estimación en línea recta
     const km = hav(byId[from], byId[to]) * 1.3;
-    return { km, edges: [{ a: from, b: to, km, mode: 'otro', line: 'Estimado (línea recta × 1.3)' }] };
+    return { km, edges: [{ a: from, b: to, km, mode: 'otro', line: 'Estimado (línea recta × 1.3)', wp: [] }] };
   }
   const edges = [];
   let cur = to;
   while (cur !== from) {
     const p = prev[cur];
-    edges.unshift({ a: p.from, b: cur, km: p.edge.km, mode: p.edge.mode, line: p.edge.line });
+    edges.unshift({ a: p.from, b: cur, km: p.edge.km, mode: p.edge.mode, line: p.edge.line, wp: p.edge.wp });
     cur = p.from;
   }
   return { km: dist[to], edges };
@@ -224,7 +259,7 @@ function shortestPath(from, to) {
 /* ======================================================================
    ESTADO (se guarda en el navegador)
    ====================================================================== */
-const STORAGE_KEY = 'japon-rutas-v1';
+const STORAGE_KEY = 'japon-rutas-v2';
 let stops = [];
 try { stops = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { stops = []; }
 stops = stops.filter(id => byId[id]);
@@ -347,12 +382,13 @@ function render() {
     const r = shortestPath(a, b);
     total += r.km;
 
-    // Dibuja cada tramo directo del recorrido
+    // Dibuja cada tramo siguiendo su trazado aproximado
     for (const e of r.edges) {
       const ca = byId[e.a], cb = byId[e.b], st = MODE[e.mode] || MODE.otro;
-      L.polyline([[ca.lat, ca.lng], [cb.lat, cb.lng]], {
-        color: st.color, weight: st.w, dashArray: st.dash, opacity: 0.9
-      }).bindTooltip(`${e.line}: ${Math.round(e.km)} km`, { sticky: true }).addTo(routeLayer);
+      const latlngs = [[ca.lat, ca.lng], ...e.wp, [cb.lat, cb.lng]];
+      L.polyline(latlngs, {
+        color: st.color, weight: st.w, dashArray: st.dash, opacity: 0.9, lineJoin: 'round'
+      }).bindTooltip(`${e.line}: ≈ ${Math.round(e.km)} km`, { sticky: true }).addTo(routeLayer);
     }
 
     const nodes = [a, ...r.edges.map(e => e.b)];
