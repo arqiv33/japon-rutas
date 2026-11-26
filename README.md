@@ -39,7 +39,8 @@ agrega sus tramos a `EDGES`.
 ## Notas
 
 - Las distancias son aproximaciones por vía ferroviaria y pueden variar un poco de las oficiales.
-- Las líneas del mapa unen estaciones en línea recta; no siguen el trazado exacto de las vías.
+- El trazado en el mapa sigue un recorrido aproximado de cada línea mediante puntos intermedios
+  (campo 6 de `EDGES`). No es el trazado GPS oficial.
 - Algunos tramos no son JR: Keikyu/Monorail (aeropuerto Haneda), Odakyu (Hakone), autobús
   (Shirakawa-go) y el ferry a Miyajima. Se marcan con colores distintos en el mapa.
 - Verifica horarios y tramos (por ejemplo, Kanazawa → Osaka se modela vía Tsuruga y Kioto con el
